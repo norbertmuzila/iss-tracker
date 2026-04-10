@@ -1,0 +1,790 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ISS Tracker — Mission Control</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;700;900&family=IBM+Plex+Mono:wght@300;400;500&display=swap');
+
+  :root {
+    --bg-deep: #050a12;
+    --bg-panel: rgba(8, 18, 35, 0.9);
+    --border: rgba(0, 180, 255, 0.15);
+    --border-glow: rgba(0, 180, 255, 0.4);
+    --accent: #00d4ff;
+    --accent-dim: rgba(0, 212, 255, 0.12);
+    --accent3: #00ff88;
+    --text: #c8dce8;
+    --text-bright: #eaf4fb;
+    --text-dim: #5a7a90;
+    --warning: #ffaa00;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--bg-deep);
+    color: var(--text);
+    font-family: 'IBM Plex Mono', monospace;
+    overflow-x: hidden;
+    min-height: 100vh;
+  }
+
+  body::after {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background: repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,180,255,0.02) 2px, rgba(0,180,255,0.02) 4px);
+    pointer-events: none;
+    z-index: 9999;
+  }
+
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(0,180,255,0.05) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(0,180,255,0.05) 1px, transparent 1px);
+    background-size: 60px 60px;
+    z-index: 0;
+    animation: gridDrift 25s linear infinite;
+  }
+
+  @keyframes gridDrift {
+    0% { transform: translate(0,0); }
+    100% { transform: translate(60px,60px); }
+  }
+
+  .header {
+    position: relative; z-index: 10;
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 14px 24px;
+    border-bottom: 1px solid var(--border);
+    background: linear-gradient(180deg, rgba(0,20,40,0.95), rgba(5,10,18,0.98));
+    backdrop-filter: blur(20px);
+  }
+
+  .header-left { display: flex; align-items: center; gap: 14px; }
+
+  .logo-icon {
+    width: 40px; height: 40px;
+    border: 2px solid var(--accent); border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    animation: logoPulse 3s ease-in-out infinite;
+  }
+
+  @keyframes logoPulse {
+    0%,100% { box-shadow: 0 0 8px var(--accent-dim), inset 0 0 8px var(--accent-dim); }
+    50% { box-shadow: 0 0 20px rgba(0,212,255,0.3), inset 0 0 15px rgba(0,212,255,0.15); }
+  }
+
+  .logo-icon svg { width: 20px; height: 20px; fill: var(--accent); }
+
+  .logo-text {
+    font-family: 'Orbitron', sans-serif;
+    font-weight: 900; font-size: 17px;
+    letter-spacing: 4px; color: var(--text-bright);
+  }
+
+  .logo-sub {
+    font-size: 9px; color: var(--text-dim);
+    letter-spacing: 3px; text-transform: uppercase; margin-top: 1px;
+  }
+
+  .header-right { display: flex; align-items: center; gap: 20px; }
+
+  .status-badge {
+    display: flex; align-items: center; gap: 8px;
+    padding: 5px 12px;
+    border: 1px solid rgba(0,255,136,0.3); border-radius: 20px;
+    font-size: 10px; letter-spacing: 2px; text-transform: uppercase;
+    color: var(--accent3); background: rgba(0,255,136,0.05);
+  }
+
+  .status-dot {
+    width: 7px; height: 7px;
+    background: var(--accent3); border-radius: 50%;
+    animation: blink 1.5s ease-in-out infinite;
+  }
+
+  @keyframes blink { 0%,100%{opacity:1}50%{opacity:0.3} }
+
+  .utc-clock {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 13px; color: var(--accent); letter-spacing: 2px;
+  }
+
+  .data-source {
+    font-size: 9px; color: var(--text-dim); letter-spacing: 1px;
+  }
+
+  .dashboard {
+    position: relative; z-index: 10;
+    display: grid;
+    grid-template-columns: 280px 1fr 260px;
+    gap: 1px;
+    height: calc(100vh - 68px);
+    background: var(--border);
+  }
+
+  .panel {
+    background: var(--bg-panel);
+    backdrop-filter: blur(10px);
+    overflow-y: auto;
+  }
+
+  .panel::-webkit-scrollbar { width: 3px; }
+  .panel::-webkit-scrollbar-track { background: transparent; }
+  .panel::-webkit-scrollbar-thumb { background: var(--border-glow); border-radius: 2px; }
+
+  .panel-header {
+    padding: 14px 18px;
+    border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; gap: 10px;
+    position: sticky; top: 0;
+    background: rgba(8,18,35,0.97);
+    z-index: 5;
+  }
+
+  .panel-header h2 {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 10px; font-weight: 700;
+    letter-spacing: 3px; text-transform: uppercase;
+    color: var(--text-dim);
+  }
+
+  .panel-header .line {
+    flex: 1; height: 1px;
+    background: linear-gradient(90deg, var(--border-glow), transparent);
+  }
+
+  .map-container {
+    position: relative; overflow: hidden;
+    background: var(--bg-deep);
+  }
+
+  #mapCanvas { width: 100%; height: 100%; display: block; }
+
+  .map-overlay {
+    position: absolute; padding: 10px 14px;
+    background: rgba(5,10,18,0.85);
+    backdrop-filter: blur(10px);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    z-index: 3;
+  }
+
+  .map-overlay.tl { top: 10px; left: 10px; }
+  .map-overlay.br { bottom: 10px; right: 10px; display: flex; gap: 18px; }
+
+  .coord-label {
+    font-size: 8px; color: var(--text-dim);
+    letter-spacing: 2px; text-transform: uppercase; margin-bottom: 2px;
+  }
+
+  .coord-value {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 15px; color: var(--accent); letter-spacing: 1px;
+  }
+
+  .telem-section {
+    padding: 14px 18px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .telem-label {
+    font-size: 8px; color: var(--text-dim);
+    letter-spacing: 2px; text-transform: uppercase; margin-bottom: 4px;
+  }
+
+  .telem-value {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 20px; color: var(--text-bright); letter-spacing: 1px;
+  }
+
+  .telem-unit { font-size: 10px; color: var(--text-dim); margin-left: 3px; font-family: 'IBM Plex Mono'; }
+
+  .telem-row {
+    display: flex; justify-content: space-between; align-items: flex-end;
+    padding: 8px 0;
+    border-bottom: 1px solid rgba(0,180,255,0.05);
+  }
+
+  .telem-row:last-child { border-bottom: none; }
+
+  .speed-gauge { padding: 16px 18px; text-align: center; }
+
+  .speed-big {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 34px; font-weight: 900;
+    color: var(--accent); letter-spacing: 2px;
+    text-shadow: 0 0 30px rgba(0,212,255,0.3);
+  }
+
+  .speed-label {
+    font-size: 9px; color: var(--text-dim);
+    letter-spacing: 3px; text-transform: uppercase; margin-top: 4px;
+  }
+
+  .orbit-ring-wrap { display: flex; justify-content: center; padding: 6px 0; }
+  .orbit-ring { position: relative; width: 110px; height: 110px; }
+  .orbit-ring svg { width: 110px; height: 110px; transform: rotate(-90deg); }
+  .orbit-ring-bg { fill: none; stroke: rgba(0,180,255,0.1); stroke-width: 4; }
+  .orbit-ring-fg {
+    fill: none; stroke: url(#orbitGrad);
+    stroke-width: 4; stroke-linecap: round;
+    stroke-dasharray: 314.16; stroke-dashoffset: 314.16;
+    transition: stroke-dashoffset 1s ease;
+  }
+
+  .orbit-ring-text {
+    position: absolute; top: 50%; left: 50%;
+    transform: translate(-50%,-50%); text-align: center;
+  }
+
+  .orbit-pct {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 22px; color: var(--text-bright); display: block;
+  }
+
+  .orbit-pct-label { font-size: 8px; color: var(--text-dim); letter-spacing: 2px; text-transform: uppercase; }
+
+  .daynight-indicator {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 3px 10px; border-radius: 12px;
+    font-size: 10px; letter-spacing: 1px; text-transform: uppercase; margin-top: 6px;
+  }
+
+  .daynight-indicator.day {
+    background: rgba(255,170,0,0.1); border: 1px solid rgba(255,170,0,0.3); color: var(--warning);
+  }
+
+  .daynight-indicator.night {
+    background: rgba(100,120,200,0.1); border: 1px solid rgba(100,120,200,0.3); color: #8899cc;
+  }
+
+  .crew-card {
+    padding: 12px 18px;
+    border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; gap: 10px;
+    transition: background 0.3s;
+  }
+
+  .crew-card:hover { background: var(--accent-dim); }
+
+  .crew-avatar {
+    width: 34px; height: 34px; border-radius: 50%;
+    border: 2px solid var(--border-glow);
+    display: flex; align-items: center; justify-content: center;
+    font-family: 'Orbitron'; font-size: 12px; font-weight: 700;
+    color: var(--accent); background: var(--accent-dim); flex-shrink: 0;
+  }
+
+  .crew-info { flex: 1; min-width: 0; }
+
+  .crew-name {
+    font-size: 11px; font-weight: 500; color: var(--text-bright);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+
+  .crew-role { font-size: 9px; color: var(--text-dim); margin-top: 1px; }
+  .crew-flag { font-size: 15px; flex-shrink: 0; }
+
+  .crew-count-badge {
+    display: inline-flex; align-items: center; justify-content: center;
+    background: var(--accent-dim); border: 1px solid var(--border-glow);
+    border-radius: 12px; padding: 2px 8px;
+    font-family: 'Orbitron'; font-size: 11px; color: var(--accent); margin-left: auto;
+  }
+
+  .history-item {
+    display: flex; align-items: center; gap: 8px;
+    padding: 6px 18px; font-size: 10px;
+    border-bottom: 1px solid rgba(0,180,255,0.04);
+  }
+
+  .history-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--accent); flex-shrink: 0; }
+  .history-time { color: var(--text-dim); min-width: 40px; font-size: 9px; }
+  .history-coords { color: var(--text); }
+
+  @media (max-width: 1100px) {
+    .dashboard { grid-template-columns: 1fr; height: auto; }
+    .map-container { height: 50vh; }
+    .panel { max-height: 45vh; }
+  }
+
+  .loading-screen {
+    position: fixed; inset: 0; z-index: 10000;
+    background: var(--bg-deep);
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    transition: opacity 0.6s, visibility 0.6s;
+  }
+
+  .loading-screen.hidden { opacity: 0; visibility: hidden; }
+
+  .loading-ring {
+    width: 50px; height: 50px;
+    border: 3px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+  }
+
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .loading-text {
+    font-family: 'Orbitron'; font-size: 11px;
+    color: var(--text-dim); letter-spacing: 4px;
+    text-transform: uppercase; margin-top: 18px;
+    animation: loadPulse 1.5s ease-in-out infinite;
+  }
+
+  @keyframes loadPulse { 0%,100%{opacity:0.4}50%{opacity:1} }
+
+  @keyframes fadeIn {
+    from { opacity:0; transform:translateY(8px); }
+    to { opacity:1; transform:translateY(0); }
+  }
+
+  .fade-in { animation: fadeIn 0.4s ease forwards; opacity: 0; }
+</style>
+</head>
+<body>
+
+<div class="loading-screen" id="loadingScreen">
+  <div class="loading-ring"></div>
+  <div class="loading-text">Acquiring Signal</div>
+</div>
+
+<header class="header">
+  <div class="header-left">
+    <div class="logo-icon">
+      <svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/></svg>
+    </div>
+    <div>
+      <div class="logo-text">ISS TRACKER</div>
+      <div class="logo-sub">Mission Control Dashboard</div>
+    </div>
+  </div>
+  <div class="header-right">
+    <div class="data-source" id="dataSource">SOURCE: ORBITAL MECHANICS</div>
+    <div class="status-badge">
+      <div class="status-dot"></div>
+      <span>Live</span>
+    </div>
+    <div class="utc-clock" id="utcClock">--:--:-- UTC</div>
+  </div>
+</header>
+
+<div class="dashboard">
+  <div class="panel">
+    <div class="panel-header"><h2>Telemetry</h2><div class="line"></div></div>
+
+    <div class="speed-gauge">
+      <div class="speed-big" id="speedValue">27,580</div>
+      <div class="speed-label">km/h orbital velocity</div>
+    </div>
+
+    <div class="telem-section">
+      <div class="telem-label">Orbit Progress</div>
+      <div class="orbit-ring-wrap">
+        <div class="orbit-ring">
+          <svg viewBox="0 0 110 110">
+            <defs>
+              <linearGradient id="orbitGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+                <stop offset="0%" stop-color="#00d4ff"/>
+                <stop offset="100%" stop-color="#00ff88"/>
+              </linearGradient>
+            </defs>
+            <circle class="orbit-ring-bg" cx="55" cy="55" r="50"/>
+            <circle class="orbit-ring-fg" id="orbitRing" cx="55" cy="55" r="50"/>
+          </svg>
+          <div class="orbit-ring-text">
+            <span class="orbit-pct" id="orbitPct">0%</span>
+            <span class="orbit-pct-label">Complete</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="telem-section">
+      <div class="telem-row">
+        <div><div class="telem-label">Altitude</div><div class="telem-value" style="font-size:16px" id="altValue">408<span class="telem-unit">km</span></div></div>
+        <div style="text-align:right"><div class="telem-label">Inclination</div><div class="telem-value" style="font-size:16px">51.64<span class="telem-unit">°</span></div></div>
+      </div>
+      <div class="telem-row">
+        <div><div class="telem-label">Orbital Period</div><div class="telem-value" style="font-size:16px">92.68<span class="telem-unit">min</span></div></div>
+        <div style="text-align:right"><div class="telem-label">Orbits / Day</div><div class="telem-value" style="font-size:16px">15.54</div></div>
+      </div>
+      <div class="telem-row">
+        <div>
+          <div class="telem-label">Visibility</div>
+          <div class="daynight-indicator day" id="daynightBadge">
+            <span id="dnIcon">☀</span> <span id="dnText">Daylight</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel-header"><h2>Ground Track</h2><div class="line"></div></div>
+    <div id="historyList"></div>
+  </div>
+
+  <div class="map-container">
+    <canvas id="mapCanvas"></canvas>
+    <div class="map-overlay tl">
+      <div style="font-family:'Orbitron';font-size:10px;color:var(--accent);letter-spacing:2px;">EQUIRECTANGULAR PROJECTION</div>
+      <div style="font-size:9px;color:var(--text-dim);margin-top:2px;">Computed orbital trajectory</div>
+    </div>
+    <div class="map-overlay br">
+      <div><div class="coord-label">Latitude</div><div class="coord-value" id="latDisplay">0.000°</div></div>
+      <div><div class="coord-label">Longitude</div><div class="coord-value" id="lonDisplay">0.000°</div></div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-header"><h2>Crew Aboard</h2><div class="line"></div><div class="crew-count-badge" id="crewCount">7</div></div>
+    <div id="crewList"></div>
+
+    <div class="panel-header"><h2>Station Data</h2><div class="line"></div></div>
+    <div class="telem-section">
+      <div class="telem-row"><div><div class="telem-label">Mass</div><div class="telem-value" style="font-size:14px">419,725<span class="telem-unit">kg</span></div></div></div>
+      <div class="telem-row"><div><div class="telem-label">Pressurized Volume</div><div class="telem-value" style="font-size:14px">931.57<span class="telem-unit">m³</span></div></div></div>
+      <div class="telem-row"><div><div class="telem-label">Truss Length</div><div class="telem-value" style="font-size:14px">109<span class="telem-unit">m</span></div></div></div>
+      <div class="telem-row"><div><div class="telem-label">First Launch</div><div class="telem-value" style="font-size:14px">20 Nov 1998</div></div></div>
+      <div class="telem-row"><div><div class="telem-label">Days In Orbit</div><div class="telem-value" style="font-size:14px" id="daysInOrbit">--</div></div></div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+  'use strict';
+
+  /* ═══════════════════════════════════════════════════════
+     ISS ORBITAL PROPAGATOR
+     Pure math — no network calls needed. Works offline.
+     Uses simplified Keplerian + J2 perturbation model.
+     If the live API responds, we use that to refine.
+  ═══════════════════════════════════════════════════════ */
+
+  const DEG = Math.PI / 180, RAD = 180 / Math.PI;
+
+  const ISS_PERIOD = 92.68 * 60; // seconds
+  const ISS_INCL = 51.6430 * DEG;
+  const ISS_SEMI = 6787; // km
+  const EARTH_R = 6371;
+  const MU = 398600.4418;
+  const MEAN_MOTION = 2 * Math.PI / ISS_PERIOD;
+  const RAAN_DRIFT = -5.0 * DEG / 86400;
+  const EPOCH_MS = new Date('2025-06-01T00:00:00Z').getTime();
+  const RAAN_EPOCH = 120.0 * DEG;
+
+  function propagate(ms) {
+    const dt = (ms - EPOCH_MS) / 1000;
+    const M = (MEAN_MOTION * dt) % (2 * Math.PI);
+    const u = M;
+    const raan = RAAN_EPOCH + RAAN_DRIFT * dt;
+    const r = ISS_SEMI;
+
+    const cosU = Math.cos(u), sinU = Math.sin(u);
+    const cosR = Math.cos(raan), sinR = Math.sin(raan);
+    const cosI = Math.cos(ISS_INCL), sinI = Math.sin(ISS_INCL);
+
+    const xECI = r * (cosR * cosU - sinR * sinU * cosI);
+    const yECI = r * (sinR * cosU + cosR * sinU * cosI);
+    const zECI = r * (sinU * sinI);
+
+    const J2000 = Date.UTC(2000, 0, 1, 12, 0, 0);
+    const gmst = (280.46061837 + 360.98564736629 * ((ms - J2000) / 86400000)) % 360;
+    const g = gmst * DEG;
+
+    const xE = xECI * Math.cos(g) + yECI * Math.sin(g);
+    const yE = -xECI * Math.sin(g) + yECI * Math.cos(g);
+
+    const lon = Math.atan2(yE, xE) * RAD;
+    const lat = Math.atan2(zECI, Math.sqrt(xE*xE + yE*yE)) * RAD;
+    const alt = r - EARTH_R;
+    const vel = Math.sqrt(MU / r) * 3.6; // km/h
+
+    return { latitude: lat, longitude: lon, altitude: alt, velocity: vel };
+  }
+
+  // ─── STATE ───
+  let issLat = 0, issLon = 0, issAlt = 408, issVel = 27580;
+  let trail = [], futureTrack = [];
+  const MAX_TRAIL = 100;
+  let apiWorking = false;
+
+  // ─── CREW (embedded — no fetch needed) ───
+  const crew = [
+    { name: 'Don Pettit',             role: 'Flight Engineer', flag: '🇺🇸' },
+    { name: 'Aleksandr Gorbunov',     role: 'Flight Engineer', flag: '🇷🇺' },
+    { name: 'Butch Wilmore',          role: 'Commander',       flag: '🇺🇸' },
+    { name: 'Sunita Williams',        role: 'Flight Engineer', flag: '🇺🇸' },
+    { name: 'Alexey Ovchinin',        role: 'Flight Engineer', flag: '🇷🇺' },
+    { name: 'Ivan Vagner',            role: 'Flight Engineer', flag: '🇷🇺' },
+    { name: 'Jonny Kim',              role: 'Flight Engineer', flag: '🇺🇸' },
+  ];
+
+  // ─── UTC CLOCK ───
+  function tick() {
+    const d = new Date();
+    document.getElementById('utcClock').textContent =
+      [d.getUTCHours(), d.getUTCMinutes(), d.getUTCSeconds()]
+        .map(v => String(v).padStart(2,'0')).join(':') + ' UTC';
+  }
+  setInterval(tick, 1000); tick();
+
+  document.getElementById('daysInOrbit').textContent =
+    Math.floor((Date.now() - new Date('1998-11-20').getTime()) / 86400000).toLocaleString();
+
+  // ─── CANVAS ───
+  const C = document.getElementById('mapCanvas');
+  const X = C.getContext('2d');
+
+  function resize() {
+    const b = C.parentElement.getBoundingClientRect();
+    C.width = b.width * devicePixelRatio;
+    C.height = b.height * devicePixelRatio;
+    C.style.width = b.width + 'px';
+    C.style.height = b.height + 'px';
+    X.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0);
+  }
+  window.addEventListener('resize', resize); resize();
+
+  function ll(lon, lat, w, h) {
+    return [(lon+180)/360*w, (90-lat)/180*h];
+  }
+
+  // ─── CONTINENTS ───
+  const LAND = [
+    [[-130,50],[-125,60],[-115,68],[-100,68],[-90,72],[-82,76],[-65,72],[-55,52],[-60,46],[-68,44],[-75,36],[-80,26],[-85,26],[-90,22],[-97,18],[-105,22],[-110,30],[-118,34],[-122,38],[-125,48],[-130,50]],
+    [[-55,60],[-45,60],[-20,70],[-18,76],[-20,82],[-40,84],[-52,80],[-58,76],[-55,68],[-55,60]],
+    [[-80,10],[-76,6],[-70,12],[-60,8],[-52,2],[-45,-2],[-35,-8],[-38,-18],[-42,-23],[-48,-28],[-54,-34],[-66,-56],[-72,-52],[-72,-40],[-70,-28],[-72,-18],[-76,-8],[-80,2],[-80,10]],
+    [[-10,36],[0,40],[2,44],[5,48],[8,54],[6,58],[10,62],[18,66],[28,71],[42,68],[38,56],[32,48],[28,42],[24,36],[12,38],[8,44],[2,48],[-5,44],[-10,36]],
+    [[-16,32],[-17,14],[-8,6],[4,6],[8,4],[12,-2],[18,-10],[28,-22],[32,-34],[28,-32],[36,-22],[42,-12],[50,2],[50,12],[44,14],[38,18],[32,22],[32,32],[24,36],[12,38],[4,36],[-4,36],[-16,32]],
+    [[28,42],[32,48],[38,56],[42,68],[56,72],[72,76],[100,78],[140,72],[145,62],[155,58],[150,48],[142,46],[140,38],[132,34],[122,30],[110,22],[106,16],[100,12],[96,16],[88,22],[82,28],[76,34],[72,28],[62,26],[52,26],[44,32],[36,36],[28,42]],
+    [[114,-14],[120,-14],[130,-12],[136,-14],[142,-16],[148,-20],[152,-26],[150,-34],[140,-38],[132,-34],[126,-32],[116,-28],[114,-22],[114,-14]],
+    [[130,31],[132,34],[136,36],[140,40],[142,44],[144,44],[142,40],[138,36],[136,34],[132,32],[130,31]],
+    [[-8,50],[-6,52],[-4,54],[-2,56],[0,58],[2,58],[2,52],[0,50],[-4,50],[-8,50]],
+    [[96,6],[104,6],[108,-2],[112,-6],[116,-8],[120,-8],[128,-4],[136,-4],[140,-6],[142,-8],[140,-8],[134,-6],[126,-8],[118,-8],[112,-6],[106,-4],[100,0],[96,6]],
+    [[166,-34],[168,-38],[174,-42],[178,-46],[178,-48],[176,-46],[172,-42],[168,-38],[166,-34]],
+  ];
+
+  function drawMap() {
+    const w = C.width / devicePixelRatio, h = C.height / devicePixelRatio;
+
+    X.fillStyle = '#070d18'; X.fillRect(0,0,w,h);
+
+    // Grid
+    X.strokeStyle = 'rgba(0,180,255,0.06)'; X.lineWidth = 0.5;
+    X.font = '9px "IBM Plex Mono"'; X.fillStyle = 'rgba(0,180,255,0.12)';
+
+    for (let la = -60; la <= 60; la += 30) {
+      const y = (90-la)/180*h;
+      X.beginPath(); X.moveTo(0,y); X.lineTo(w,y); X.stroke();
+      X.fillText(la+'°', 4, y-3);
+    }
+    for (let lo = -150; lo <= 180; lo += 30) {
+      const x = (lo+180)/360*w;
+      X.beginPath(); X.moveTo(x,0); X.lineTo(x,h); X.stroke();
+    }
+
+    // Equator
+    X.strokeStyle = 'rgba(255,170,0,0.12)'; X.lineWidth = 1;
+    X.beginPath(); X.moveTo(0,h/2); X.lineTo(w,h/2); X.stroke();
+
+    // Continents
+    LAND.forEach(c => {
+      if (c.length < 3) return;
+      X.beginPath();
+      let [px,py] = ll(c[0][0],c[0][1],w,h); X.moveTo(px,py);
+      for (let i=1;i<c.length;i++) { [px,py]=ll(c[i][0],c[i][1],w,h); X.lineTo(px,py); }
+      X.closePath();
+      X.fillStyle = 'rgba(0,180,255,0.07)'; X.fill();
+      X.strokeStyle = 'rgba(0,180,255,0.22)'; X.lineWidth = 0.7; X.stroke();
+    });
+
+    // Future track
+    if (futureTrack.length > 1) {
+      X.strokeStyle = 'rgba(0,212,255,0.12)'; X.lineWidth = 1.5; X.setLineDash([5,4]);
+      X.beginPath();
+      let px = null;
+      for (let i=0;i<futureTrack.length;i++) {
+        const [x,y] = ll(futureTrack[i][0], futureTrack[i][1], w, h);
+        if (px !== null && Math.abs(x-px) > w*0.4) { X.stroke(); X.beginPath(); X.moveTo(x,y); }
+        else if (!i) X.moveTo(x,y); else X.lineTo(x,y);
+        px = x;
+      }
+      X.stroke(); X.setLineDash([]);
+    }
+
+    // Trail
+    if (trail.length > 1) {
+      for (let i=1;i<trail.length;i++) {
+        const a = (i/trail.length)*0.6;
+        const [x1,y1] = ll(trail[i-1][0],trail[i-1][1],w,h);
+        const [x2,y2] = ll(trail[i][0],trail[i][1],w,h);
+        if (Math.abs(x2-x1) > w*0.4) continue;
+        X.strokeStyle = `rgba(0,212,255,${a})`; X.lineWidth = 2;
+        X.beginPath(); X.moveTo(x1,y1); X.lineTo(x2,y2); X.stroke();
+      }
+    }
+
+    // ISS
+    const [ix,iy] = ll(issLon, issLat, w, h);
+
+    const t = Date.now()/1000;
+    for (let r=0;r<3;r++) {
+      const p = (t+r*0.4) % 1.8;
+      const rad = 6+p*18;
+      X.strokeStyle = `rgba(0,212,255,${Math.max(0,0.4-p*0.22)})`;
+      X.lineWidth = 1.2;
+      X.beginPath(); X.arc(ix,iy,rad,0,Math.PI*2); X.stroke();
+    }
+
+    X.save(); X.translate(ix,iy);
+    X.fillStyle = 'rgba(0,212,255,0.55)';
+    X.fillRect(-16,-2.5,11,5); X.fillRect(5,-2.5,11,5);
+    X.fillStyle = 'rgba(0,212,255,0.75)';
+    X.fillRect(-4,-7,8,14);
+    X.fillStyle = '#fff';
+    X.beginPath(); X.arc(0,0,2.5,0,Math.PI*2); X.fill();
+
+    const glow = X.createRadialGradient(0,0,0,0,0,28);
+    glow.addColorStop(0,'rgba(0,212,255,0.18)');
+    glow.addColorStop(1,'rgba(0,212,255,0)');
+    X.fillStyle = glow;
+    X.beginPath(); X.arc(0,0,28,0,Math.PI*2); X.fill();
+    X.restore();
+
+    X.font = '600 10px "Orbitron"'; X.fillStyle = 'rgba(0,212,255,0.85)';
+    X.fillText('ISS', ix+22, iy-8);
+    X.font = '9px "IBM Plex Mono"'; X.fillStyle = 'rgba(200,220,232,0.45)';
+    X.fillText(`${issLat.toFixed(2)}°, ${issLon.toFixed(2)}°`, ix+22, iy+5);
+  }
+
+  // ─── FUTURE TRACK ───
+  function buildFuture() {
+    futureTrack = [];
+    const now = Date.now();
+    for (let i=0; i<250; i++) {
+      const ms = now + (i/250) * ISS_PERIOD * 1.5 * 1000;
+      const p = propagate(ms);
+      futureTrack.push([p.longitude, p.latitude]);
+    }
+  }
+
+  // ─── UPDATE ───
+  function updateFromMath() {
+    const p = propagate(Date.now());
+    issLat = p.latitude; issLon = p.longitude;
+    issAlt = p.altitude; issVel = p.velocity;
+    refreshUI();
+  }
+
+  async function tryAPI() {
+    try {
+      const ac = new AbortController();
+      const to = setTimeout(() => ac.abort(), 3500);
+      const r = await fetch('https://api.wheretheiss.at/v1/satellites/25544', { signal: ac.signal });
+      clearTimeout(to);
+      if (!r.ok) throw 0;
+      const d = await r.json();
+      issLat = d.latitude; issLon = d.longitude;
+      issAlt = d.altitude; issVel = d.velocity;
+      if (!apiWorking) { apiWorking = true; document.getElementById('dataSource').textContent = 'SOURCE: LIVE API'; }
+      refreshUI();
+    } catch(_) {
+      if (apiWorking) { apiWorking = false; document.getElementById('dataSource').textContent = 'SOURCE: ORBITAL MECHANICS'; }
+      updateFromMath();
+    }
+  }
+
+  function refreshUI() {
+    document.getElementById('latDisplay').textContent = issLat.toFixed(3)+'°';
+    document.getElementById('lonDisplay').textContent = issLon.toFixed(3)+'°';
+    document.getElementById('altValue').innerHTML = Math.round(issAlt)+'<span class="telem-unit">km</span>';
+    document.getElementById('speedValue').textContent = Math.round(issVel).toLocaleString();
+
+    // Day/night
+    const now = new Date();
+    const doy = Math.floor((now - new Date(now.getFullYear(),0,0))/86400000);
+    const decl = -23.44 * Math.cos(2*Math.PI/365*(doy+10));
+    const ha = ((now.getUTCHours()+now.getUTCMinutes()/60)/24*360 + issLon) % 360 - 180;
+    const sinA = Math.sin(issLat*DEG)*Math.sin(decl*DEG)+Math.cos(issLat*DEG)*Math.cos(decl*DEG)*Math.cos(ha*DEG);
+    const badge = document.getElementById('daynightBadge');
+    if (sinA > -0.1) {
+      badge.className = 'daynight-indicator day';
+      document.getElementById('dnIcon').textContent = '☀';
+      document.getElementById('dnText').textContent = 'Daylight';
+    } else {
+      badge.className = 'daynight-indicator night';
+      document.getElementById('dnIcon').textContent = '🌙';
+      document.getElementById('dnText').textContent = 'Eclipse';
+    }
+
+    // Orbit progress
+    const elapsed = ((Date.now()/1000) % ISS_PERIOD);
+    const pct = Math.round(elapsed/ISS_PERIOD*100);
+    document.getElementById('orbitPct').textContent = pct+'%';
+    document.getElementById('orbitRing').style.strokeDashoffset = 314.16*(1-pct/100);
+
+    trail.push([issLon, issLat]);
+    if (trail.length > MAX_TRAIL) trail.shift();
+
+    buildFuture();
+    updateHistory();
+  }
+
+  function updateHistory() {
+    const el = document.getElementById('historyList');
+    el.innerHTML = '';
+    trail.slice(-8).reverse().forEach((p,i) => {
+      const d = document.createElement('div');
+      d.className = 'history-item';
+      d.innerHTML = `<div class="history-dot" style="opacity:${1-i*0.1}"></div><div class="history-time">${i===0?'Now':'-'+i*3+'s'}</div><div class="history-coords">${p[1].toFixed(3)}°, ${p[0].toFixed(3)}°</div>`;
+      el.appendChild(d);
+    });
+  }
+
+  // ─── CREW ───
+  function renderCrew() {
+    document.getElementById('crewCount').textContent = crew.length;
+    const el = document.getElementById('crewList');
+    crew.forEach((p,i) => {
+      const c = document.createElement('div');
+      c.className = 'crew-card fade-in';
+      c.style.animationDelay = (i*0.06)+'s';
+      const ini = p.name.split(' ').map(n=>n[0]).join('').slice(0,2);
+      c.innerHTML = `<div class="crew-avatar">${ini}</div><div class="crew-info"><div class="crew-name">${p.name}</div><div class="crew-role">${p.role}</div></div><div class="crew-flag">${p.flag}</div>`;
+      el.appendChild(c);
+    });
+  }
+
+  // ─── BOOT ───
+  function boot() {
+    // Instant: compute from math, render crew, show UI
+    updateFromMath();
+    renderCrew();
+    document.getElementById('loadingScreen').classList.add('hidden');
+
+    // Animation loop
+    (function frame() { drawMap(); requestAnimationFrame(frame); })();
+
+    // Update every 3s: try API first, auto-fallback to math
+    setInterval(tryAPI, 3000);
+
+    // Also try API once right now (non-blocking)
+    tryAPI();
+  }
+
+  boot();
+})();
+</script>
+</body>
+</html>
